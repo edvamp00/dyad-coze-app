@@ -1,12 +1,29 @@
 import axios from 'axios';
 
 export default async function handler(req, res) {
-    // 1. Verifica se o método é POST (padrão para APIs)
+    // --- INÍCIO DO NOVO BLOCO DE CÓDIGO ---
+    // Configura os cabeçalhos para permitir a comunicação de outros domínios (CORS)
+    res.setHeader('Access-Control-Allow-Credentials', true);
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Permite qualquer origem
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+    res.setHeader(
+        'Access-Control-Allow-Headers',
+        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
+    );
+
+    // Responde ao "pedido de permissão" (OPTIONS request) do navegador
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
+    // --- FIM DO NOVO BLOCO DE CÓDIGO ---
+
+    // 1. Agora, verifica se o método da requisição principal é POST
     if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Método não permitido. Use POST.' });
+        return res.status(405).json({ error: `Método ${req.method} não permitido. Use POST.` });
     }
 
-    // 2. Pega as chaves secretas das variáveis de ambiente da Vercel
+    // Pega as chaves secretas das variáveis de ambiente da Vercel
     const botId = process.env.COZE_BOT_ID;
     const apiKey = process.env.COZE_API_KEY;
 
@@ -15,7 +32,7 @@ export default async function handler(req, res) {
     }
 
     try {
-        // 3. Extrai a última mensagem do usuário do corpo da requisição (formato OpenAI)
+        // Extrai a última mensagem do usuário do corpo da requisição (formato OpenAI)
         const openAIMessages = req.body.messages || [];
         const userMessage = openAIMessages.find(msg => msg.role === 'user');
 
@@ -24,10 +41,10 @@ export default async function handler(req, res) {
         }
         const query = userMessage.content;
 
-        // 4. Monta a requisição para a API da Coze
+        // Monta a requisição para a API da Coze
         const cozePayload = {
             bot_id: botId,
-            user: "dyad-user-123", // Um identificador de usuário genérico
+            user: "dyad-user-123",
             query: query,
             stream: false
         };
@@ -36,14 +53,13 @@ export default async function handler(req, res) {
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
             'Accept': '*/*',
-            'Host': 'api.coze.com',
             'Connection': 'keep-alive'
         };
 
-        // 5. Chama a API da Coze
+        // Chama a API da Coze
         const cozeResponse = await axios.post('https://api.coze.com/open_api/v2/chat', cozePayload, { headers: cozeHeaders });
 
-        // 6. Extrai a resposta de texto da Coze
+        // Extrai a resposta de texto da Coze
         let assistantResponse = "Desculpe, não consegui obter uma resposta.";
         if (cozeResponse.data.messages) {
             const assistantMessage = cozeResponse.data.messages.find(msg => msg.type === 'answer');
@@ -52,12 +68,12 @@ export default async function handler(req, res) {
             }
         }
 
-        // 7. Formata a resposta no padrão que a Dyad/OpenAI espera
+        // Formata a resposta no padrão que a Dyad/OpenAI espera
         const openAIResponse = {
             id: cozeResponse.data.conversation_id || 'chatcmpl-123',
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
-            model: 'gpt-3.5-turbo-0125', // Nome de modelo fixo, a Dyad precisa disso
+            model: 'coze-bot',
             choices: [{
                 index: 0,
                 message: {
@@ -67,13 +83,13 @@ export default async function handler(req, res) {
                 finish_reason: 'stop',
             }],
             usage: {
-                prompt_tokens: 0, // A Coze não informa isso, então deixamos 0
+                prompt_tokens: 0,
                 completion_tokens: 0,
                 total_tokens: 0,
             },
         };
 
-        // 8. Envia a resposta formatada de volta para a Dyad
+        // Envia a resposta formatada de volta para a Dyad
         res.status(200).json(openAIResponse);
 
     } catch (error) {
